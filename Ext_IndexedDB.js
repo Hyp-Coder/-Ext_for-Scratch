@@ -317,48 +317,60 @@ class XExt {
   
     // 上传文件到数据库
     uploadFile(args) {
-      const file = args.file;
-      const fileKey = file;  // 这里直接使用文件名作为键
-      const reader = new FileReader();
+      // 创建一个文件输入框（隐藏的）
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file';
   
-      reader.onload = function(event) {
-        const fileData = event.target.result;
+      // 监听文件选择事件
+      fileInput.addEventListener('change', function(event) {
+        const file = event.target.files[0];  // 获取选中的第一个文件
+        if (!file) return;
   
-        const request = indexedDB.open(args.dbName, 1);
+        const fileKey = file.name;  // 使用文件名作为键
+        const reader = new FileReader();
   
-        request.onupgradeneeded = function(event) {
-          const db = event.target.result;
-          if (!db.objectStoreNames.contains('fileStore')) {
-            db.createObjectStore('fileStore');
-          }
-        };
+        reader.onload = function(loadEvent) {
+          const fileData = loadEvent.target.result;
   
-        request.onsuccess = function(event) {
-          const db = event.target.result;
-          const transaction = db.transaction(['fileStore'], 'readwrite');
-          const store = transaction.objectStore('fileStore');
-          store.put(fileData, fileKey);  // 将文件内容存储到数据库中，键为 fileKey
+          // 打开 IndexedDB 数据库
+          const request = indexedDB.open(args.dbName, 1);
   
-          transaction.oncomplete = function() {
-            console.log('文件上传成功');
+          request.onupgradeneeded = function(event) {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains('fileStore')) {
+              db.createObjectStore('fileStore');
+            }
           };
   
-          transaction.onerror = function(event) {
-            console.error('文件上传失败:', event);
+          request.onsuccess = function(event) {
+            const db = event.target.result;
+            const transaction = db.transaction(['fileStore'], 'readwrite');
+            const store = transaction.objectStore('fileStore');
+            store.put(fileData, fileKey);  // 将文件内容存储到数据库，键为 fileKey
+  
+            transaction.oncomplete = function() {
+              console.log('文件上传成功');
+            };
+  
+            transaction.onerror = function(event) {
+              console.error('文件上传失败:', event);
+            };
+          };
+  
+          request.onerror = function(event) {
+            console.error('打开数据库失败:', event);
           };
         };
   
-        request.onerror = function(event) {
-          console.error('打开数据库失败:', event);
+        reader.onerror = function(event) {
+          console.error('文件读取失败:', event);
         };
-      };
   
-      reader.onerror = function(event) {
-        console.error('文件读取失败:', event);
-      };
+        reader.readAsArrayBuffer(file);  // 读取文件为二进制数据
+      });
   
-      // 读取文件
-      reader.readAsArrayBuffer(file);  // 假设文件是二进制文件，如果是文本文件可以使用 reader.readAsText(file);
+      // 触发文件选择弹窗
+      fileInput.click();
     }
   
     // 从数据库获取文件
@@ -439,4 +451,3 @@ class XExt {
   }
   
   Scratch.extensions.register(new XExt());
-  
