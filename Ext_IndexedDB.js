@@ -1,9 +1,9 @@
 class XExt {
     getInfo() {
       return {
-        id: 'IndexedDBExtension', // ID确定唯一
-        name: '晓晓的IndexedDB存储', // 扩展的名字
-        color1: '#34495e', // 设置代码块的颜色
+        id: 'IndexedDBExtension',
+        name: '晓晓的IndexedDB存储',
+        color1: '#34495e',
         blocks: [
           {
             opcode: 'createDatabase',
@@ -106,6 +106,70 @@ class XExt {
               },
             },
           },
+          {
+            opcode: 'uploadFile',
+            blockType: Scratch.BlockType.COMMAND,
+            text: '上传文件 [file] 到数据库 [dbName]',
+            arguments: {
+              file: {
+                type: Scratch.ArgumentType.OBJECT,
+                defaultValue: null,
+              },
+              dbName: {
+                type: Scratch.ArgumentType.STRING,
+                defaultValue: 'ScratchDB',
+              },
+            },
+          },
+          {
+            opcode: 'retrieveFile',
+            blockType: Scratch.BlockType.REPORTER,
+            text: '从数据库 [dbName] 获取文件 [fileKey]',
+            arguments: {
+              fileKey: {
+                type: Scratch.ArgumentType.STRING,
+                defaultValue: 'defaultFileKey',
+              },
+              dbName: {
+                type: Scratch.ArgumentType.STRING,
+                defaultValue: 'ScratchDB',
+              },
+            },
+          },
+          {
+            opcode: 'deleteFile',
+            blockType: Scratch.BlockType.COMMAND,
+            text: '删除文件 [fileKey] 从数据库 [dbName]',
+            arguments: {
+              fileKey: {
+                type: Scratch.ArgumentType.STRING,
+                defaultValue: 'defaultFileKey',
+              },
+              dbName: {
+                type: Scratch.ArgumentType.STRING,
+                defaultValue: 'ScratchDB',
+              },
+            },
+          },
+          {
+            opcode: 'updateFile',
+            blockType: Scratch.BlockType.COMMAND,
+            text: '更新文件 [fileKey] 为 [newFile] 到数据库 [dbName]',
+            arguments: {
+              fileKey: {
+                type: Scratch.ArgumentType.STRING,
+                defaultValue: 'defaultFileKey',
+              },
+              newFile: {
+                type: Scratch.ArgumentType.OBJECT,
+                defaultValue: null,
+              },
+              dbName: {
+                type: Scratch.ArgumentType.STRING,
+                defaultValue: 'ScratchDB',
+              },
+            },
+          },
         ],
       };
     }
@@ -118,6 +182,9 @@ class XExt {
         const db = event.target.result;
         if (!db.objectStoreNames.contains('dataStore')) {
           db.createObjectStore('dataStore');
+        }
+        if (!db.objectStoreNames.contains('fileStore')) {
+          db.createObjectStore('fileStore');
         }
       };
   
@@ -165,7 +232,6 @@ class XExt {
           const requestData = store.get(args.key);
   
           requestData.onsuccess = function() {
-            // 如果数据为空，返回 None
             resolve(requestData.result || 'None');
           };
   
@@ -221,7 +287,7 @@ class XExt {
       };
     }
   
-    // 获取所有数据，并返回数组形式的字符串
+    // 获取所有数据
     getAllData(args) {
       return new Promise((resolve, reject) => {
         const request = indexedDB.open(args.dbName, 1);
@@ -238,7 +304,6 @@ class XExt {
               allData.push({ key: cursor.key, value: cursor.value });
               cursor.continue();
             } else {
-              // 将所有数据转换为数组形式的字符串
               resolve(JSON.stringify(allData));
             }
           };
@@ -248,6 +313,89 @@ class XExt {
           };
         };
       });
+    }
+  
+    // 上传文件到数据库
+    uploadFile(args) {
+      const file = args.file;
+      const fileKey = file.name;  // 使用文件名作为键
+      const reader = new FileReader();
+  
+      reader.onload = function(event) {
+        const fileData = event.target.result;
+  
+        const request = indexedDB.open(args.dbName, 1);
+  
+        request.onupgradeneeded = function(event) {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains('fileStore')) {
+            db.createObjectStore('fileStore');
+          }
+        };
+  
+        request.onsuccess = function(event) {
+          const db = event.target.result;
+          const transaction = db.transaction(['fileStore'], 'readwrite');
+          const store = transaction.objectStore('fileStore');
+          store.put(fileData, fileKey);
+        };
+  
+        request.onerror = function(event) {
+          console.error('存储文件失败:', event);
+        };
+      };
+  
+      reader.readAsDataURL(file);  // 读取文件为Base64格式
+    }
+  
+    // 从数据库中获取文件
+    retrieveFile(args) {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(args.dbName, 1);
+  
+        request.onsuccess = function(event) {
+          const db = event.target.result;
+          const transaction = db.transaction(['fileStore'], 'readonly');
+          const store = transaction.objectStore('fileStore');
+          const requestData = store.get(args.fileKey);
+  
+          requestData.onsuccess = function() {
+            const fileData = requestData.result;
+            if (fileData) {
+              const blob = new Blob([fileData], { type: 'application/octet-stream' });
+              resolve(blob);  // 返回Blob对象
+            } else {
+              reject('文件未找到');
+            }
+          };
+  
+          requestData.onerror = function() {
+            reject('获取文件失败');
+          };
+        };
+      });
+    }
+  
+    // 删除文件
+    deleteFile(args) {
+      const request = indexedDB.open(args.dbName, 1);
+  
+      request.onsuccess = function(event) {
+        const db = event.target.result;
+        const transaction = db.transaction(['fileStore'], 'readwrite');
+        const store = transaction.objectStore('fileStore');
+        store.delete(args.fileKey);
+      };
+  
+      request.onerror = function(event) {
+        console.error('删除文件失败:', event);
+      };
+    }
+  
+    // 更新文件
+    updateFile(args) {
+      this.deleteFile(args);  // 先删除旧文件
+      this.uploadFile(args);  // 上传新文件
     }
   }
   
