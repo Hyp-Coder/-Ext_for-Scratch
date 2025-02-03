@@ -112,8 +112,8 @@ class XExt {
             text: '上传文件 [file] 到数据库 [dbName]',
             arguments: {
               file: {
-                type: Scratch.ArgumentType.OBJECT,
-                defaultValue: null,
+                type: Scratch.ArgumentType.STRING,  // 将其修改为STRING类型，确保能够传递文件名等数据
+                defaultValue: 'file',
               },
               dbName: {
                 type: Scratch.ArgumentType.STRING,
@@ -161,8 +161,8 @@ class XExt {
                 defaultValue: 'defaultFileKey',
               },
               newFile: {
-                type: Scratch.ArgumentType.OBJECT,
-                defaultValue: null,
+                type: Scratch.ArgumentType.STRING,  // 将其修改为STRING类型
+                defaultValue: 'newFile',
               },
               dbName: {
                 type: Scratch.ArgumentType.STRING,
@@ -318,7 +318,7 @@ class XExt {
     // 上传文件到数据库
     uploadFile(args) {
       const file = args.file;
-      const fileKey = file.name;  // 使用文件名作为键
+      const fileKey = file;  // 这里直接使用文件名作为键
       const reader = new FileReader();
   
       reader.onload = function(event) {
@@ -334,71 +334,109 @@ class XExt {
         };
   
         request.onsuccess = function(event) {
+            const db = event.target.result;
+            const transaction = db.transaction(['fileStore'], 'readwrite');
+            const store = transaction.objectStore('fileStore');
+            store.put(fileData, fileKey);  // 将文件内容存储到数据库中，键为 fileKey
+    
+            transaction.oncomplete = function() {
+              console.log('文件上传成功');
+            };
+    
+            transaction.onerror = function(event) {
+              console.error('文件上传失败:', event);
+            };
+          };
+    
+          request.onerror = function(event) {
+            console.error('打开数据库失败:', event);
+          };
+        };
+    
+        reader.onerror = function(event) {
+          console.error('文件读取失败:', event);
+        };
+    
+        // 读取文件
+        reader.readAsArrayBuffer(file);  // 假设文件是二进制文件，如果是文本文件可以使用 reader.readAsText(file);
+      }
+    
+      // 从数据库获取文件
+      retrieveFile(args) {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(args.dbName, 1);
+    
+          request.onsuccess = function(event) {
+            const db = event.target.result;
+            const transaction = db.transaction(['fileStore'], 'readonly');
+            const store = transaction.objectStore('fileStore');
+            const requestData = store.get(args.fileKey);
+    
+            requestData.onsuccess = function() {
+              resolve(requestData.result || '没有找到文件');
+            };
+    
+            requestData.onerror = function() {
+              reject('获取文件失败');
+            };
+          };
+        });
+      }
+    
+      // 删除文件
+      deleteFile(args) {
+        const request = indexedDB.open(args.dbName, 1);
+    
+        request.onsuccess = function(event) {
           const db = event.target.result;
           const transaction = db.transaction(['fileStore'], 'readwrite');
           const store = transaction.objectStore('fileStore');
-          store.put(fileData, fileKey);
+          store.delete(args.fileKey);
         };
-  
+    
         request.onerror = function(event) {
-          console.error('存储文件失败:', event);
+          console.error('删除文件失败:', event);
         };
-      };
-  
-      reader.readAsDataURL(file);  // 读取文件为Base64格式
-    }
-  
-    // 从数据库中获取文件
-    retrieveFile(args) {
-      return new Promise((resolve, reject) => {
-        const request = indexedDB.open(args.dbName, 1);
-  
-        request.onsuccess = function(event) {
-          const db = event.target.result;
-          const transaction = db.transaction(['fileStore'], 'readonly');
-          const store = transaction.objectStore('fileStore');
-          const requestData = store.get(args.fileKey);
-  
-          requestData.onsuccess = function() {
-            const fileData = requestData.result;
-            if (fileData) {
-              const blob = new Blob([fileData], { type: 'application/octet-stream' });
-              resolve(blob);  // 返回Blob对象
-            } else {
-              reject('文件未找到');
-            }
+      }
+    
+      // 更新文件
+      updateFile(args) {
+        const file = args.newFile;
+        const fileKey = args.fileKey;
+        const reader = new FileReader();
+    
+        reader.onload = function(event) {
+          const fileData = event.target.result;
+    
+          const request = indexedDB.open(args.dbName, 1);
+    
+          request.onsuccess = function(event) {
+            const db = event.target.result;
+            const transaction = db.transaction(['fileStore'], 'readwrite');
+            const store = transaction.objectStore('fileStore');
+            store.put(fileData, fileKey);  // 更新文件内容
+    
+            transaction.oncomplete = function() {
+              console.log('文件更新成功');
+            };
+    
+            transaction.onerror = function(event) {
+              console.error('文件更新失败:', event);
+            };
           };
-  
-          requestData.onerror = function() {
-            reject('获取文件失败');
+    
+          request.onerror = function(event) {
+            console.error('打开数据库失败:', event);
           };
         };
-      });
+    
+        reader.onerror = function(event) {
+          console.error('文件读取失败:', event);
+        };
+    
+        reader.readAsArrayBuffer(file);  // 假设是二进制文件，若是文本文件可以使用 reader.readAsText(file);
+      }
     }
-  
-    // 删除文件
-    deleteFile(args) {
-      const request = indexedDB.open(args.dbName, 1);
-  
-      request.onsuccess = function(event) {
-        const db = event.target.result;
-        const transaction = db.transaction(['fileStore'], 'readwrite');
-        const store = transaction.objectStore('fileStore');
-        store.delete(args.fileKey);
-      };
-  
-      request.onerror = function(event) {
-        console.error('删除文件失败:', event);
-      };
-    }
-  
-    // 更新文件
-    updateFile(args) {
-      this.deleteFile(args);  // 先删除旧文件
-      this.uploadFile(args);  // 上传新文件
-    }
-  }
-  
-  Scratch.extensions.register(new XExt());
-  
-  //晓晓的IndexedDB存储 © 2025 by 晓晓shine is licensed under CC BY-SA 4.0 
+    
+    Scratch.extensions.register(new XExt());
+    
