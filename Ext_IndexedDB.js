@@ -117,6 +117,61 @@ class XExt {
                         },
                     },
                 },
+                // 新增功能
+                {
+                    opcode: 'clearDatabase',
+                    blockType: Scratch.BlockType.COMMAND,
+                    text: '清空数据库 [dbName]',
+                    arguments: {
+                        dbName: {
+                            type: Scratch.ArgumentType.STRING,
+                            defaultValue: 'ScratchDB',
+                        },
+                    },
+                },
+                {
+                    opcode: 'checkDatabaseExists',
+                    blockType: Scratch.BlockType.REPORTER,
+                    text: '数据库 [dbName] 是否存在？',
+                    arguments: {
+                        dbName: {
+                            type: Scratch.ArgumentType.STRING,
+                            defaultValue: 'ScratchDB',
+                        },
+                    },
+                },
+                {
+                    opcode: 'checkKeyExists',
+                    blockType: Scratch.BlockType.BOOLEAN,
+                    text: '数据库 [dbName] 中的 [key] 是否存在？',
+                    arguments: {
+                        key: {
+                            type: Scratch.ArgumentType.STRING,
+                            defaultValue: 'defaultKey',
+                        },
+                        dbName: {
+                            type: Scratch.ArgumentType.STRING,
+                            defaultValue: 'ScratchDB',
+                        },
+                    },
+                },
+                {
+                    opcode: 'getAllDatabaseNames',
+                    blockType: Scratch.BlockType.REPORTER,
+                    text: '获取所有数据库名称',
+                    arguments: {},
+                },
+                {
+                    opcode: 'exportDatabaseToJSON',
+                    blockType: Scratch.BlockType.REPORTER,
+                    text: '导出数据库 [dbName] 的所有数据为JSON文件',
+                    arguments: {
+                        dbName: {
+                            type: Scratch.ArgumentType.STRING,
+                            defaultValue: 'ScratchDB',
+                        },
+                    },
+                },
             ],
         };
     }
@@ -259,33 +314,135 @@ class XExt {
         });
     }
 
+    // 清空数据库
+    clearDatabase(args) {
+        const request = indexedDB.open(args.dbName, 1);
+
+        request.onsuccess = function(event) {
+            const db = event.target.result;
+            const transaction = db.transaction(['dataStore'], 'readwrite');
+            const store = transaction.objectStore('dataStore');
+            store.clear();
+            console.log('数据库数据已清空');
+        };
+
+        request.onerror = function(event) {
+            console.error('清空数据库失败:', event);
+        };
+    }
+
+    // 判断数据库是否存在
+    checkDatabaseExists(args) {
+        const request = indexedDB.open(args.dbName, 1);
+        return new Promise((resolve, reject) => {
+            request.onsuccess = function() {
+                resolve(true);
+            };
+            request.onerror = function() {
+                resolve(false);
+            };
+        });
+    }
+
+    // 判断某个键是否存在
+    checkKeyExists(args) {
+        const request = indexedDB.open(args.dbName, 1);
+        return new Promise((resolve, reject) => {
+            request.onsuccess = function(event) {
+                const db = event.target.result;
+                const transaction = db.transaction(['dataStore'], 'readonly');
+                const store = transaction.objectStore('dataStore');
+                const requestData = store.get(args.key);
+
+                requestData.onsuccess = function() {
+                    resolve(requestData.result !== undefined);
+                };
+
+                requestData.onerror = function() {
+                    resolve(false);
+                };
+            };
+        });
+    }
+
+    // 获取所有数据库名称
+    getAllDatabaseNames() {
+        return new Promise((resolve, reject) => {
+            const dbNames = [];
+            const request = indexedDB.open('dummy', 1);
+            
+            request.onsuccess = function() {
+                const db = request.result;
+                const listRequest = indexedDB.databases();
+                listRequest.onsuccess = function() {
+                    dbNames.push(listRequest.result);
+                    resolve(dbNames);
+                };
+            };
+
+            request.onerror = function() {
+                reject('获取数据库名称失败');
+            };
+        });
+    }
+
+    // 导出数据库为JSON
+    exportDatabaseToJSON(args) {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(args.dbName, 1);
+            
+            request.onsuccess = function(event) {
+                const db = event.target.result;
+                const transaction = db.transaction(['dataStore'], 'readonly');
+                const store = transaction.objectStore('dataStore');
+                let allData = [];
+                
+                store.openCursor().onsuccess = function(event) {
+                    const cursor = event.target.result;
+                    if (cursor) {
+                        allData.push({ key: cursor.key, value: cursor.value });
+                        cursor.continue();
+                    } else {
+                        const jsonBlob = new Blob([JSON.stringify(allData)], { type: 'application/json' });
+                        const link = document.createElement('a');
+                        link.href = URL.createObjectURL(jsonBlob);
+                        link.download = `${args.dbName}_data.json`;
+                        link.click();
+                        resolve('导出成功');
+                    }
+                };
+
+                store.openCursor().onerror = function(event) {
+                    reject('导出数据库数据失败');
+                };
+            };
+        });
+    }
+
     // 打开本地文件并转换为二进制文本
     openFileAsBinary(args) {
         return new Promise((resolve, reject) => {
-            // 创建一个文件输入框（隐藏的）
             const fileInput = document.createElement('input');
             fileInput.type = 'file';
 
-            // 监听文件选择事件
             fileInput.addEventListener('change', function(event) {
-                const file = event.target.files[0];  // 获取选中的第一个文件
+                const file = event.target.files[0];
                 if (!file) return reject('未选择文件');
 
                 const reader = new FileReader();
 
                 reader.onload = function(loadEvent) {
-                    const binaryText = loadEvent.target.result;  // 获取文件的二进制数据
-                    resolve(binaryText);  // 返回二进制数据
+                    const binaryText = loadEvent.target.result;
+                    resolve(binaryText);
                 };
 
                 reader.onerror = function() {
                     reject('文件读取失败');
                 };
 
-                reader.readAsBinaryString(file);  // 读取文件为二进制文本
+                reader.readAsBinaryString(file);
             });
 
-            // 触发文件选择弹窗
             fileInput.click();
         });
     }
