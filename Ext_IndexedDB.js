@@ -107,66 +107,13 @@ class XExt {
                     },
                 },
                 {
-                    opcode: 'uploadFile',
-                    blockType: Scratch.BlockType.COMMAND,
-                    text: '上传文件 [file] 到数据库 [dbName]',
+                    opcode: 'openFileAsBinary',
+                    blockType: Scratch.BlockType.REPORTER,
+                    text: '打开文件 [file] 并转换为二进制文本',
                     arguments: {
                         file: {
                             type: Scratch.ArgumentType.STRING,
                             defaultValue: 'file',
-                        },
-                        dbName: {
-                            type: Scratch.ArgumentType.STRING,
-                            defaultValue: 'ScratchDB',
-                        },
-                    },
-                },
-                {
-                    opcode: 'retrieveFile',
-                    blockType: Scratch.BlockType.REPORTER,
-                    text: '从数据库 [dbName] 获取文件 [fileKey]',
-                    arguments: {
-                        fileKey: {
-                            type: Scratch.ArgumentType.STRING,
-                            defaultValue: 'defaultFileKey',
-                        },
-                        dbName: {
-                            type: Scratch.ArgumentType.STRING,
-                            defaultValue: 'ScratchDB',
-                        },
-                    },
-                },
-                {
-                    opcode: 'deleteFile',
-                    blockType: Scratch.BlockType.COMMAND,
-                    text: '删除文件 [fileKey] 从数据库 [dbName]',
-                    arguments: {
-                        fileKey: {
-                            type: Scratch.ArgumentType.STRING,
-                            defaultValue: 'defaultFileKey',
-                        },
-                        dbName: {
-                            type: Scratch.ArgumentType.STRING,
-                            defaultValue: 'ScratchDB',
-                        },
-                    },
-                },
-                {
-                    opcode: 'updateFile',
-                    blockType: Scratch.BlockType.COMMAND,
-                    text: '更新文件 [fileKey] 为 [newFile] 到数据库 [dbName]',
-                    arguments: {
-                        fileKey: {
-                            type: Scratch.ArgumentType.STRING,
-                            defaultValue: 'defaultFileKey',
-                        },
-                        newFile: {
-                            type: Scratch.ArgumentType.STRING,
-                            defaultValue: 'newFile',
-                        },
-                        dbName: {
-                            type: Scratch.ArgumentType.STRING,
-                            defaultValue: 'ScratchDB',
                         },
                     },
                 },
@@ -182,9 +129,6 @@ class XExt {
             const db = event.target.result;
             if (!db.objectStoreNames.contains('dataStore')) {
                 db.createObjectStore('dataStore');
-            }
-            if (!db.objectStoreNames.contains('fileStore')) {
-                db.createObjectStore('fileStore');
             }
         };
 
@@ -315,138 +259,35 @@ class XExt {
         });
     }
 
-    // 上传文件到数据库，自动转换为二进制
-    uploadFile(args) {
-        // 创建一个文件输入框（隐藏的）
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-
-        // 监听文件选择事件
-        fileInput.addEventListener('change', function(event) {
-            const file = event.target.files[0];  // 获取选中的第一个文件
-            if (!file) return;
-
-            const fileKey = file.name;  // 使用文件名作为键
-            const reader = new FileReader();
-
-            reader.onload = function(loadEvent) {
-                const fileData = loadEvent.target.result;  // 获取文件的二进制数据
-
-                // 打开 IndexedDB 数据库
-                const request = indexedDB.open(args.dbName, 1);
-
-                request.onupgradeneeded = function(event) {
-                    const db = event.target.result;
-                    if (!db.objectStoreNames.contains('fileStore')) {
-                        db.createObjectStore('fileStore');
-                    }
-                };
-
-                request.onsuccess = function(event) {
-                    const db = event.target.result;
-                    const transaction = db.transaction(['fileStore'], 'readwrite');
-                    const store = transaction.objectStore('fileStore');
-                    store.put(fileData, fileKey);  // 将二进制数据存储到数据库，键为 fileKey
-
-                    transaction.oncomplete = function() {
-                        console.log('文件上传成功');
-                    };
-
-                    transaction.onerror = function(event) {
-                        console.error('文件上传失败:', event);
-                    };
-                };
-
-                request.onerror = function(event) {
-                    console.error('打开数据库失败:', event);
-                };
-            };
-
-            reader.onerror = function(event) {
-                console.error('文件读取失败:', event);
-            };
-
-            reader.readAsArrayBuffer(file);  // 将文件读取为二进制数据
-        });
-
-        // 触发文件选择弹窗
-        fileInput.click();
-    }
-
-    // 从数据库获取文件
-    retrieveFile(args) {
+    // 打开本地文件并转换为二进制文本
+    openFileAsBinary(args) {
         return new Promise((resolve, reject) => {
-            const request = indexedDB.open(args.dbName, 1);
+            // 创建一个文件输入框（隐藏的）
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
 
-            request.onsuccess = function(event) {
-                const db = event.target.result;
-                const transaction = db.transaction(['fileStore'], 'readonly');
-                const store = transaction.objectStore('fileStore');
-                const requestData = store.get(args.fileKey);
+            // 监听文件选择事件
+            fileInput.addEventListener('change', function(event) {
+                const file = event.target.files[0];  // 获取选中的第一个文件
+                if (!file) return reject('未选择文件');
 
-                requestData.onsuccess = function() {
-                    resolve(requestData.result || '没有找到文件');
+                const reader = new FileReader();
+
+                reader.onload = function(loadEvent) {
+                    const binaryText = loadEvent.target.result;  // 获取文件的二进制数据
+                    resolve(binaryText);  // 返回二进制数据
                 };
 
-                requestData.onerror = function() {
-                    reject('获取文件失败');
+                reader.onerror = function() {
+                    reject('文件读取失败');
                 };
-            };
+
+                reader.readAsBinaryString(file);  // 读取文件为二进制文本
+            });
+
+            // 触发文件选择弹窗
+            fileInput.click();
         });
-    }
-
-    // 删除文件
-    deleteFile(args) {
-        const request = indexedDB.open(args.dbName, 1);
-
-        request.onsuccess = function(event) {
-            const db = event.target.result;
-            const transaction = db.transaction(['fileStore'], 'readwrite');
-            const store = transaction.objectStore('fileStore');
-            store.delete(args.fileKey);
-        };
-
-        request.onerror = function(event) {
-            console.error('删除文件失败:', event);
-        };
-    }
-
-    // 更新文件
-    updateFile(args) {
-        const file = args.newFile;
-        const fileKey = args.fileKey;
-        const reader = new FileReader();
-
-        reader.onload = function(event) {
-            const fileData = event.target.result;
-
-            const request = indexedDB.open(args.dbName, 1);
-
-            request.onsuccess = function(event) {
-                const db = event.target.result;
-                const transaction = db.transaction(['fileStore'], 'readwrite');
-                const store = transaction.objectStore('fileStore');
-                store.put(fileData, fileKey);  // 更新文件内容
-
-                transaction.oncomplete = function() {
-                    console.log('文件更新成功');
-                };
-
-                transaction.onerror = function(event) {
-                    console.error('文件更新失败:', event);
-                };
-            };
-
-            request.onerror = function(event) {
-                console.error('打开数据库失败:', event);
-            };
-        };
-
-        reader.onerror = function(event) {
-            console.error('文件读取失败:', event);
-        };
-
-        reader.readAsArrayBuffer(file);  // 假设是二进制文件，若是文本文件可以使用 reader.readAsText(file);
     }
 }
 
