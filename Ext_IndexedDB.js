@@ -130,7 +130,7 @@ class XExt {
                 },
                 {
                     opcode: 'checkDatabaseExists',
-                    blockType: Scratch.BlockType.REPORTER,
+                    blockType: Scratch.BlockType.BOOLEAN,
                     text: '数据库 [dbName] 是否存在？',
                     arguments: {
                         dbName: {
