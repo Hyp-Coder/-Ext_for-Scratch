@@ -117,7 +117,6 @@ class XExt {
                         },
                     },
                 },
-                // 新增功能
                 {
                     opcode: 'clearDatabase',
                     blockType: Scratch.BlockType.COMMAND,
@@ -165,6 +164,17 @@ class XExt {
                     opcode: 'exportDatabaseToJSON',
                     blockType: Scratch.BlockType.REPORTER,
                     text: '导出数据库 [dbName] 的所有数据为JSON文件',
+                    arguments: {
+                        dbName: {
+                            type: Scratch.ArgumentType.STRING,
+                            defaultValue: 'ScratchDB',
+                        },
+                    },
+                },
+                {
+                    opcode: 'getDatabaseSize',
+                    blockType: Scratch.BlockType.REPORTER,
+                    text: '获取数据库 [dbName] 的使用大小',
                     arguments: {
                         dbName: {
                             type: Scratch.ArgumentType.STRING,
@@ -371,84 +381,93 @@ class XExt {
             const dbNames = [];
             const request = indexedDB.open('dummy', 1);
             
-            request.onsuccess = function() {
-                const db = request.result;
-                const listRequest = indexedDB.databases();
-                listRequest.onsuccess = function() {
-                    dbNames.push(listRequest.result);
-                    resolve(dbNames);
+            request.onsuccess = function(event) {
+                const db = event.target.result;
+                const transaction = db.transaction(['dataStore'], 'readonly');
+                const store = transaction.objectStore('dataStore');
+                
+                store.openCursor().onsuccess = function(event) {
+                    const cursor = event.target.result;
+                    if (cursor) {
+                        dbNames.push(cursor.key);
+                        cursor.continue();
+                    } else {
+                        resolve(dbNames);
+                    }
                 };
-            };
 
-            request.onerror = function() {
-                reject('获取数据库名称失败');
+                store.openCursor().onerror = function() {
+                    reject('无法获取数据库名称');
+                };
             };
         });
     }
 
-    // 导出数据库为JSON
+    // 导出数据库为JSON文件
     exportDatabaseToJSON(args) {
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(args.dbName, 1);
-            
+
             request.onsuccess = function(event) {
                 const db = event.target.result;
                 const transaction = db.transaction(['dataStore'], 'readonly');
                 const store = transaction.objectStore('dataStore');
                 let allData = [];
-                
+
                 store.openCursor().onsuccess = function(event) {
                     const cursor = event.target.result;
                     if (cursor) {
                         allData.push({ key: cursor.key, value: cursor.value });
                         cursor.continue();
                     } else {
-                        const jsonBlob = new Blob([JSON.stringify(allData)], { type: 'application/json' });
+                        const jsonData = JSON.stringify(allData);
+                        const blob = new Blob([jsonData], { type: 'application/json' });
                         const link = document.createElement('a');
-                        link.href = URL.createObjectURL(jsonBlob);
-                        link.download = `${args.dbName}_data.json`;
+                        link.href = URL.createObjectURL(blob);
+                        link.download = `${args.dbName}.json`;
                         link.click();
-                        resolve('导出成功');
+                        resolve('数据库导出成功');
                     }
                 };
 
                 store.openCursor().onerror = function(event) {
-                    reject('导出数据库数据失败');
+                    reject('导出数据库失败');
                 };
             };
         });
     }
 
-    // 打开本地文件并转换为二进制文本
-    openFileAsBinary(args) {
+    // 获取数据库的大小
+    getDatabaseSize(args) {
         return new Promise((resolve, reject) => {
-            const fileInput = document.createElement('input');
-            fileInput.type = 'file';
+            const request = indexedDB.open(args.dbName, 1);
 
-            fileInput.addEventListener('change', function(event) {
-                const file = event.target.files[0];
-                if (!file) return reject('未选择文件');
+            request.onsuccess = function(event) {
+                const db = event.target.result;
+                const transaction = db.transaction(['dataStore'], 'readonly');
+                const store = transaction.objectStore('dataStore');
+                let size = 0;
 
-                const reader = new FileReader();
-
-                reader.onload = function(loadEvent) {
-                    const binaryText = loadEvent.target.result;
-                    resolve(binaryText);
+                store.openCursor().onsuccess = function(event) {
+                    const cursor = event.target.result;
+                    if (cursor) {
+                        size += cursor.value.length; // 简单估算每条数据的大小
+                        cursor.continue();
+                    } else {
+                        resolve(size);
+                    }
                 };
 
-                reader.onerror = function() {
-                    reject('文件读取失败');
+                store.openCursor().onerror = function(event) {
+                    reject('获取数据库大小失败');
                 };
-
-                reader.readAsBinaryString(file);
-            });
-
-            fileInput.click();
+            };
         });
     }
 }
 
 Scratch.extensions.register(new XExt());
+
 
 /*
 # 晓晓的IndexedDB存储
